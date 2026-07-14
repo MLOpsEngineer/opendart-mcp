@@ -10,11 +10,11 @@ from opendart_mcp.server import app, mcp
 
 
 @pytest.mark.asyncio
-async def test_mcp_exposes_six_curated_tools_with_complete_annotations() -> None:
+async def test_mcp_exposes_seven_curated_tools_with_complete_annotations() -> None:
     async with Client(mcp) as client:
         tools = await client.list_tools()
 
-    assert len(tools) == 6
+    assert len(tools) == 7
     assert {tool.name for tool in tools} == {
         "get_company_profile",
         "search_disclosures",
@@ -22,6 +22,7 @@ async def test_mcp_exposes_six_curated_tools_with_complete_annotations() -> None
         "get_dividend_information",
         "get_major_shareholders",
         "get_employee_statistics",
+        "classify_disclosure_request",
     }
     for tool in tools:
         assert re.fullmatch(r"[A-Za-z0-9_-]+", tool.name)

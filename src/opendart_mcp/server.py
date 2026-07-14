@@ -27,6 +27,7 @@ from .normalization import (
     validate_report_code,
     validate_statement_type,
 )
+from .routing import classify_disclosure_request as classify_request
 
 SERVICE_DESCRIPTION = "Disclosure Compass(공시나침반) with OpenDART (전자공시시스템 DART)"
 READ_ONLY = {
@@ -108,6 +109,28 @@ async def search_disclosures(
     )
     items = disclosures(payload, max_items)
     return result("list.json", items, count=len(items))
+
+
+@mcp.tool(
+    name="classify_disclosure_request",
+    description=(
+        "Use Disclosure Compass(공시나침반) to classify a natural-language request into "
+        "sixteen OpenDART (전자공시시스템 DART) disclosure domains and recommend the "
+        "currently available read-only tools without invoking downstream servers."
+    ),
+    annotations=annotations("Classify disclosure request"),
+)
+async def classify_disclosure_request(
+    query: Annotated[
+        str,
+        Field(min_length=1, max_length=500, description="Korean disclosure-related request"),
+    ],
+    top_k: Annotated[
+        int,
+        Field(ge=1, le=16, description="Number of ranked disclosure domains to return"),
+    ] = 3,
+) -> dict[str, Any]:
+    return classify_request(query, top_k)
 
 
 @mcp.tool(
