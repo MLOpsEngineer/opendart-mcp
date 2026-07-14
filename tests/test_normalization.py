@@ -90,4 +90,3 @@ def test_shareholder_rows_convert_percentages() -> None:
 
     assert shaped[0]["ending_shares"] == 10_000
     assert shaped[0]["ending_ownership_percent"] == 12.5
-

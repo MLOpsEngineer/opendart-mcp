@@ -28,6 +28,12 @@ from .normalization import (
     validate_statement_type,
 )
 from .routing import classify_disclosure_request as classify_request
+from .specialists import (
+    SPECIALIST_TOOLS,
+    SpecialistServerRegistry,
+    list_specialists,
+    select_specialist_tool,
+)
 
 SERVICE_DESCRIPTION = "Disclosure Compass(공시나침반) with OpenDART (전자공시시스템 DART)"
 READ_ONLY = {
@@ -47,6 +53,7 @@ mcp = FastMCP(
     stateless_http=True,
 )
 client = OpenDartClient()
+specialist_registry = SpecialistServerRegistry(client)
 
 
 def annotations(title: str) -> ToolAnnotations:
@@ -115,8 +122,8 @@ async def search_disclosures(
     name="classify_disclosure_request",
     description=(
         "Use Disclosure Compass(공시나침반) to classify a natural-language request into "
-        "sixteen OpenDART (전자공시시스템 DART) disclosure domains and recommend the "
-        "currently available read-only tools without invoking downstream servers."
+        "sixteen OpenDART (전자공시시스템 DART) disclosure domains and inspect the "
+        "available specialist-server tools."
     ),
     annotations=annotations("Classify disclosure request"),
 )
@@ -131,6 +138,155 @@ async def classify_disclosure_request(
     ] = 3,
 ) -> dict[str, Any]:
     return classify_request(query, top_k)
+
+
+@mcp.tool(
+    name="list_disclosure_servers",
+    description=(
+        "Use Disclosure Compass(공시나침반) to list the sixteen in-process specialist "
+        "MCP servers and their original OpenDART (전자공시시스템 DART) tool names and "
+        "endpoints. Optionally inspect one server."
+    ),
+    annotations=annotations("List disclosure specialist servers"),
+)
+async def list_disclosure_servers(
+    server_id: Annotated[
+        str | None,
+        Field(description="Optional canonical specialist server ID"),
+    ] = None,
+) -> dict[str, Any]:
+    return list_specialists(server_id)
+
+
+@mcp.tool(
+    name="call_disclosure_server_tool",
+    description=(
+        "Use Disclosure Compass(공시나침반) to call one named OpenDART "
+        "(전자공시시스템 DART) tool on one of the sixteen in-process specialist MCP "
+        "servers. Use list_disclosure_servers first when the server or tool is unknown."
+    ),
+    annotations=annotations("Call disclosure specialist tool"),
+)
+async def call_disclosure_server_tool(
+    server_id: Annotated[str, Field(description="Canonical specialist server ID")],
+    tool_name: Annotated[str, Field(description="Original specialist MCP tool name")],
+    arguments: Annotated[
+        dict[str, Any],
+        Field(
+            description=(
+                "Tool arguments such as corp_code/corp_name, business_year/report_code, "
+                "begin_date/end_date, receipt_number, and max_items"
+            )
+        ),
+    ],
+) -> dict[str, Any]:
+    return await specialist_registry.call_tool(server_id, tool_name, arguments)
+
+
+@mcp.tool(
+    name="route_and_call_disclosure",
+    description=(
+        "Use Disclosure Compass(공시나침반) to classify a Korean disclosure request, "
+        "select one of sixteen specialist MCP servers and one of its tools, then execute "
+        "the selected OpenDART (전자공시시스템 DART) tool in one call."
+    ),
+    annotations=annotations("Route and call disclosure specialist"),
+)
+async def route_and_call_disclosure(
+    query: Annotated[
+        str,
+        Field(min_length=1, max_length=500, description="Korean disclosure-related request"),
+    ],
+    corp_code: Annotated[
+        str | None,
+        Field(description="Optional eight-digit OpenDART company code"),
+    ] = None,
+    corp_name: Annotated[
+        str | None,
+        Field(description="Optional company or stock name resolved through OpenDART"),
+    ] = None,
+    tool_name: Annotated[
+        str | None,
+        Field(description="Optional exact inner tool name; otherwise selected from query"),
+    ] = None,
+    business_year: Annotated[
+        str | None,
+        Field(description="Optional business year; defaults to the previous year"),
+    ] = None,
+    report_code: Annotated[
+        str,
+        Field(description="11011 annual, 11012 half, 11013 Q1, or 11014 Q3"),
+    ] = "11011",
+    begin_date: Annotated[
+        str | None,
+        Field(description="Optional start date in YYYYMMDD; defaults to one year ago"),
+    ] = None,
+    end_date: Annotated[
+        str | None,
+        Field(description="Optional end date in YYYYMMDD; defaults to today"),
+    ] = None,
+    max_items: Annotated[int, Field(ge=1, le=50)] = 20,
+    corp_codes: Annotated[
+        list[str] | None,
+        Field(description="Optional list of up to ten company codes for comparison tools"),
+    ] = None,
+    receipt_number: Annotated[
+        str | None,
+        Field(description="Optional 14-digit filing receipt number for document/XBRL tools"),
+    ] = None,
+    fs_division: Annotated[
+        str | None,
+        Field(description="Optional CFS consolidated or OFS separate statement basis"),
+    ] = None,
+    statement_type: Annotated[
+        str | None,
+        Field(description="Optional XBRL taxonomy statement code such as BS1 or IS1"),
+    ] = None,
+    index_code: Annotated[
+        str | None,
+        Field(description="Optional OpenDART financial index classification code"),
+    ] = None,
+    disclosure_type: Annotated[
+        str | None,
+        Field(description="Optional OpenDART disclosure type filter for dart_list"),
+    ] = None,
+) -> dict[str, Any]:
+    routed = classify_request(query, 1)
+    route = routed["routes"][0]
+    server_id = route["category"]
+    selected = select_specialist_tool(server_id, query)
+    if tool_name is not None:
+        available = {tool.name for tool in SPECIALIST_TOOLS[server_id]}
+        if tool_name not in available:
+            raise ValueError(f"unknown tool '{tool_name}' for server '{server_id}'")
+        selected = next(tool for tool in SPECIALIST_TOOLS[server_id] if tool.name == tool_name)
+    arguments = {
+        key: value
+        for key, value in {
+            "corp_code": corp_code,
+            "corp_name": corp_name,
+            "business_year": business_year,
+            "report_code": report_code,
+            "begin_date": begin_date,
+            "end_date": end_date,
+            "max_items": max_items,
+            "corp_codes": corp_codes,
+            "receipt_number": receipt_number,
+            "fs_division": fs_division,
+            "statement_type": statement_type,
+            "index_code": index_code,
+            "disclosure_type": disclosure_type,
+        }.items()
+        if value is not None
+    }
+    called = await specialist_registry.call_tool(server_id, selected.name, arguments)
+    return {
+        "query": query,
+        "route": route,
+        "selected_server": server_id,
+        "selected_tool": selected.name,
+        "result": called,
+    }
 
 
 @mcp.tool(

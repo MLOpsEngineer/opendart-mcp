@@ -263,9 +263,11 @@ def _category_match(query: str, category: dict[str, Any]) -> tuple[float, list[s
 def classify_disclosure_request(query: str, top_k: int = 3) -> dict[str, Any]:
     """Rank all disclosure domains for a natural-language request.
 
-    This function classifies and recommends existing tools. It does not invoke
-    independent downstream MCP servers or call an external model.
+    This function classifies and reports both public gateway tools and the
+    selected in-process specialist server's tools. It does not call OpenDART.
     """
+
+    from .specialists import SPECIALIST_TOOLS
 
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must contain non-whitespace text")
@@ -289,6 +291,7 @@ def classify_disclosure_request(query: str, top_k: int = 3) -> dict[str, Any]:
                 "score": round(score, 4),
                 "matched_terms": matches,
                 "supported_tools": list(category["supported_tools"]),
+                "specialist_tools": [tool.name for tool in SPECIALIST_TOOLS[category["id"]]],
             }
         )
 

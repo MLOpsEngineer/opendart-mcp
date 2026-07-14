@@ -2,8 +2,10 @@
 
 A focused Model Context Protocol server for public company disclosures from
 [OpenDART (전자공시시스템 DART)](https://opendart.fss.or.kr/). Disclosure
-Compass (공시나침반) exposes seven read-only tools over Streamable HTTP and
-returns concise, normalized JSON.
+Compass (공시나침반) exposes ten read-only gateway tools over Streamable HTTP.
+Behind that compact public surface are 16 in-process specialist MCP servers
+with 82 OpenDART tools, distilled from the original implementation without its
+LLM, vector-search, or A2A runtime dependencies.
 
 This project is independent open-source software and is not an official
 OpenDART product.
@@ -18,12 +20,16 @@ OpenDART product.
 | `get_dividend_information` | Current and prior-period dividend rows |
 | `get_major_shareholders` | Major shareholder positions |
 | `get_employee_statistics` | Employee counts, tenure, and pay statistics |
-| `classify_disclosure_request` | Rank a Korean request across 16 disclosure domains without executing a disclosure query |
+| `classify_disclosure_request` | Rank a Korean request across 16 disclosure domains and show their specialist tools |
+| `list_disclosure_servers` | Inspect all 16 specialist servers and 82 tool names/endpoints |
+| `call_disclosure_server_tool` | Execute an exact named tool on an exact specialist server |
+| `route_and_call_disclosure` | Classify, select a specialist tool, and execute it in one call |
 
 All tools are declared read-only, non-destructive, idempotent, and open-world.
-Every list response is capped at 50 normalized rows; disclosure search is capped
-at 20 rows. Upstream calls use strict connect/read timeouts and reject responses
-larger than 2 MB.
+Every specialist result is capped at 50 rows. Binary filing and XBRL tools
+return bounded ZIP metadata rather than raw file contents. Upstream calls use
+strict connect/read timeouts and reject JSON responses larger than 2 MB or
+binary responses larger than 8 MB.
 
 ## Disclosure request classification
 
@@ -38,11 +44,13 @@ contains:
 - `score`: the normalized relevance score
 - `matched_terms`: terms from the request that contributed to the route
 - `supported_tools`: data tools currently exposed by this server for the domain
+- `specialist_tools`: original tool names available on that domain's MCP server
 
-This tool performs deterministic term matching and classifies only. It does not
-call OpenDART, execute the returned data tools, or run 16 separate MCP servers.
-`supported_tools` names only the current data tools that may help with a route;
-it does not indicate a dedicated backend for each category.
+This classifier performs deterministic term matching and does not itself call
+OpenDART. Use `route_and_call_disclosure` to classify and execute in one request,
+or use `call_disclosure_server_tool` for deterministic server/tool selection.
+The 16 specialist servers are real FastMCP instances called through in-memory
+FastMCP clients; they are not 16 separately deployed network services.
 
 The classifier recognizes exactly these 16 domains:
 
@@ -85,15 +93,41 @@ Example response:
       "label_ko": "재무정보",
       "score": 1.0,
       "matched_terms": ["연결 재무제표", "재무제표", "매출액"],
-      "supported_tools": ["get_financial_statement"]
+      "supported_tools": ["get_financial_statement"],
+      "specialist_tools": [
+        "dart_fnlttSinglAcnt",
+        "dart_fnlttMultiAcnt",
+        "dart_fnlttXbrl",
+        "dart_fnlttSinglAcntAll",
+        "dart_xbrlTaxonomy",
+        "dart_fnlttSinglIndx",
+        "dart_fnlttCmpnyIndx"
+      ]
     }
   ],
   "total_categories": 16
 }
 ```
 
-Use `get_financial_statement` in a separate MCP call when the request includes
-its required company and reporting-period arguments.
+To execute a routed request directly, pass a company identifier and any
+period-specific fields to `route_and_call_disclosure`:
+
+```json
+{
+  "query": "삼성전자 전환사채 발행 결정을 찾아줘",
+  "corp_code": "00126380",
+  "begin_date": "20250101",
+  "end_date": "20251231"
+}
+```
+
+This selects the `convertible_securities` server and its
+`dart_cvbdIsDecsn` tool. Callers that already know the exact target can instead
+use `call_disclosure_server_tool` with `server_id`, `tool_name`, and an
+`arguments` object. Accepted fields depend on the endpoint and include
+`corp_code` or `corp_name`, `business_year`, `report_code`, `begin_date`,
+`end_date`, `corp_codes`, `receipt_number`, `fs_division`, `statement_type`,
+`index_code`, and `max_items`.
 
 ## Requirements
 

@@ -69,12 +69,14 @@ def test_classifier_returns_public_response_shape() -> None:
     assert result["total_categories"] == 16
     assert len(result["routes"]) == 3
     assert all(
-        set(route) == {
+        set(route)
+        == {
             "category",
             "label_ko",
             "score",
             "matched_terms",
             "supported_tools",
+            "specialist_tools",
         }
         for route in result["routes"]
     )
@@ -132,3 +134,10 @@ def test_implemented_domains_publish_their_supported_tools(
     top_route = classify_disclosure_request(query, top_k=1)["routes"][0]
 
     assert set(top_route["supported_tools"]) == expected_tools
+
+
+def test_every_route_publishes_registered_specialist_tools() -> None:
+    routes = classify_disclosure_request("공시", top_k=16)["routes"]
+
+    assert all(route["specialist_tools"] for route in routes)
+    assert sum(len(route["specialist_tools"]) for route in routes) == 82
