@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
+from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.routing import Mount
 
 from .client import OpenDartClient
 from .normalization import (
@@ -33,6 +37,7 @@ from .specialists import (
     SpecialistServerRegistry,
     list_specialists,
     select_specialist_tool,
+    specialist_mcp_path,
 )
 
 SERVICE_DESCRIPTION = "Disclosure Compass(공시나침반) with OpenDART (전자공시시스템 DART)"
@@ -49,8 +54,7 @@ mcp = FastMCP(
         "Use these read-only tools to retrieve concise Korean corporate disclosure data "
         f"from {SERVICE_DESCRIPTION}. Company identifiers are eight-digit OpenDART corp codes."
     ),
-    version="1.1.0",
-    stateless_http=True,
+    version="1.2.0",
 )
 client = OpenDartClient()
 specialist_registry = SpecialistServerRegistry(client)
@@ -60,52 +64,9 @@ def annotations(title: str) -> ToolAnnotations:
     return ToolAnnotations(title=title, **READ_ONLY)
 
 
-def _build_public_specialist_handler(server_id: str, tool_name: str):
-    """Bind a specialist identity once so every public MCP tool dispatches correctly."""
-
-    async def invoke(
-        arguments: Annotated[
-            dict[str, Any],
-            Field(
-                description=(
-                    "Arguments accepted by this OpenDART endpoint. Depending on the tool, use "
-                    "corp_code or corp_name, business_year, report_code, begin_date, end_date, "
-                    "receipt_number, corp_codes, fs_division, statement_type, index_code, and "
-                    "max_items."
-                )
-            ),
-        ],
-    ) -> dict[str, Any]:
-        return await specialist_registry.call_tool(server_id, tool_name, arguments)
-
-    return invoke
-
-
-def _register_public_specialist_tools() -> None:
-    """Expose every original specialist adapter in the top-level MCP tool catalog."""
-
-    registered_names: set[str] = set()
-    for server_id, specs in SPECIALIST_TOOLS.items():
-        for spec in specs:
-            if spec.name in registered_names:
-                raise RuntimeError(f"duplicate public specialist tool name: {spec.name}")
-            registered_names.add(spec.name)
-            mcp.tool(
-                name=spec.name,
-                title=f"{server_id}: {spec.label}",
-                description=(
-                    f"Use {SERVICE_DESCRIPTION} to retrieve {spec.label} through the "
-                    f"{server_id} disclosure domain. This read-only specialist tool calls "
-                    f"OpenDART endpoint {spec.endpoint}."
-                ),
-                annotations=annotations(f"{server_id}: {spec.label}"),
-                tags={"opendart", "specialist", server_id},
-            )(_build_public_specialist_handler(server_id, spec.name))
-
-
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(_request: Request) -> JSONResponse:
-    return JSONResponse({"status": "ok", "service": "opendart-mcp", "version": "1.1.0"})
+    return JSONResponse({"status": "ok", "service": "opendart-mcp", "version": "1.2.0"})
 
 
 @mcp.tool(
@@ -458,15 +419,48 @@ async def get_employee_statistics(
     return result("empSttus.json", items, count=len(items))
 
 
-_register_public_specialist_tools()
+def create_app() -> Starlette:
+    """Create the combined gateway and specialist ASGI application."""
+
+    gateway_app = mcp.http_app(path="/mcp", stateless_http=True)
+    specialist_http_apps = {
+        server_id: specialist_registry.get_server(server_id).http_app(
+            path="/mcp",
+            stateless_http=True,
+        )
+        for server_id in SPECIALIST_TOOLS
+    }
+
+    @asynccontextmanager
+    async def application_lifespan(_app: Starlette) -> AsyncIterator[None]:
+        """Start every mounted FastMCP session manager with the parent ASGI app."""
+
+        async with AsyncExitStack() as stack:
+            for mounted_app in [gateway_app, *specialist_http_apps.values()]:
+                await stack.enter_async_context(mounted_app.router.lifespan_context(mounted_app))
+            yield
+
+    return Starlette(
+        routes=[
+            Mount(
+                specialist_mcp_path(server_id).removesuffix("/mcp"),
+                app=specialist_http_apps[server_id],
+            )
+            for server_id in SPECIALIST_TOOLS
+        ]
+        + [Mount("/", app=gateway_app)],
+        lifespan=application_lifespan,
+    )
 
 
-app = mcp.http_app(path="/mcp")
+app = create_app()
 
 
 def main() -> None:
+    import uvicorn
+
     port = int(os.getenv("PORT", "8000"))
-    mcp.run(transport="http", host="0.0.0.0", port=port, path="/mcp", stateless_http=True)
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":

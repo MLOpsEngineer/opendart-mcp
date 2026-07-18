@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from typing import Any, Literal
 
 from fastmcp import Client, FastMCP
+from mcp.types import ToolAnnotations
 
 from .client import OpenDartClient
 from .normalization import (
@@ -32,6 +33,15 @@ ToolKind = Literal[
     "taxonomy",
     "xbrl",
 ]
+
+SERVICE_DESCRIPTION = "Disclosure Compass(공시나침반) with OpenDART (전자공시시스템 DART)"
+SPECIALIST_MCP_PATH_PREFIX = "/specialists"
+READ_ONLY_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "openWorldHint": True,
+    "idempotentHint": True,
+}
 
 
 @dataclass(frozen=True)
@@ -508,6 +518,14 @@ def specialist_tool_count() -> int:
     return sum(len(tools) for tools in SPECIALIST_TOOLS.values())
 
 
+def specialist_mcp_path(server_id: str) -> str:
+    """Return the public Streamable HTTP path for one specialist MCP server."""
+
+    if server_id not in SPECIALIST_TOOLS:
+        raise ValueError(f"unknown disclosure server: {server_id}")
+    return f"{SPECIALIST_MCP_PATH_PREFIX}/{server_id}/mcp"
+
+
 def list_specialists(server_id: str | None = None) -> dict[str, Any]:
     if server_id is not None and server_id not in SPECIALIST_TOOLS:
         raise ValueError(f"unknown disclosure server: {server_id}")
@@ -561,7 +579,15 @@ class SpecialistServerRegistry:
         }
 
     def _build_server(self, server_id: str, tools: tuple[SpecialistTool, ...]) -> FastMCP:
-        server = FastMCP(f"Disclosure Compass specialist: {server_id}")
+        server = FastMCP(
+            f"Disclosure Compass specialist: {server_id}",
+            instructions=(
+                f"Use {SERVICE_DESCRIPTION} read-only specialist tools for the "
+                f"{server_id} disclosure domain. Provide either an eight-digit OpenDART "
+                "company code or a Korean company name when a tool needs a company."
+            ),
+            version="1.2.0",
+        )
         for spec in tools:
             self._register_tool(server, server_id, spec)
         return server
@@ -572,11 +598,22 @@ class SpecialistServerRegistry:
 
         server.tool(
             name=spec.name,
+            title=f"{server_id}: {spec.label}",
             description=(
-                f"{spec.label}. Original {server_id} specialist tool backed by "
+                f"Use {SERVICE_DESCRIPTION} to retrieve {spec.label} through the "
+                f"{server_id} disclosure domain. This read-only specialist tool calls "
                 f"OpenDART endpoint {spec.endpoint}."
             ),
+            annotations=ToolAnnotations(
+                title=f"{server_id}: {spec.label}", **READ_ONLY_ANNOTATIONS
+            ),
+            tags={"opendart", "specialist", server_id},
         )(invoke)
+
+    def get_server(self, server_id: str) -> FastMCP:
+        """Return one public-ready specialist FastMCP server by its canonical ID."""
+
+        return self._server(server_id)
 
     async def list_tools(self, server_id: str) -> list[str]:
         server = self._server(server_id)

@@ -2,11 +2,11 @@
 
 A focused Model Context Protocol server for public company disclosures from
 [OpenDART (전자공시시스템 DART)](https://opendart.fss.or.kr/). Disclosure
-Compass (공시나침반) exposes **92 read-only tools** over Streamable HTTP:
-ten convenience gateway tools plus all 82 original OpenDART specialist tools.
-The specialist tools retain their 16 disclosure-domain identities while sharing
-one deployable MCP endpoint, without LLM, vector-search, or A2A runtime
-dependencies.
+Compass (공시나침반) exposes 16 specialist Streamable HTTP MCP endpoints with
+**82 read-only OpenDART tools** in total. Each specialist endpoint has 2-9
+tools, meeting PlayMCP's per-server 20-tool limit. A separate 10-tool gateway
+endpoint remains available for backward-compatible request routing, without
+LLM, vector-search, or A2A runtime dependencies.
 
 This project is independent open-source software and is not an official
 OpenDART product.
@@ -32,12 +32,13 @@ runbook, see [구현·배포 운영 기록](docs/IMPLEMENTATION_DEPLOYMENT_KO.md
 | `call_disclosure_server_tool` | Execute an exact named tool on an exact specialist server |
 | `route_and_call_disclosure` | Classify, select a specialist tool, and execute it in one call |
 
-### Specialist tools (82)
+### Specialist tools (82 across 16 MCP endpoints)
 
-Every original `dart_*` tool is also directly published in `tools/list`.
-The tools are grouped by the same 16 domain IDs as the classifier and preserve
-the original OpenDART endpoint names; the full per-domain catalog is in the
-[implementation record](docs/IMPLEMENTATION_DEPLOYMENT_KO.md#4-전문-서버-16개와-내부-tool-82개).
+Every original `dart_*` tool is directly published in exactly one specialist
+endpoint's `tools/list`. The endpoints use
+`/specialists/<domain-id>/mcp`, such as
+`/specialists/financial_statement/mcp`. The 16 domain IDs and full per-domain
+catalog are in the [implementation record](docs/IMPLEMENTATION_DEPLOYMENT_KO.md).
 
 Specialist tools take one `arguments` object. Its accepted fields depend on the
 endpoint and include `corp_code` or `corp_name`, `business_year`, `report_code`,
@@ -79,8 +80,9 @@ contains:
 This classifier performs deterministic term matching and does not itself call
 OpenDART. Use `route_and_call_disclosure` to classify and execute in one request,
 or use `call_disclosure_server_tool` for deterministic server/tool selection.
-The 16 specialist servers are real FastMCP instances called through in-memory
-FastMCP clients; they are not 16 separately deployed network services.
+The 16 specialist servers are real FastMCP instances mounted in one deployable
+ASGI process. They are separate public MCP network endpoints even though they
+share one container and one OpenDART client implementation.
 
 The classifier recognizes exactly these 16 domains:
 
@@ -174,8 +176,10 @@ export DART_API_KEY='your-runtime-secret'
 opendart-mcp
 ```
 
-The MCP endpoint is `http://localhost:8000/mcp` and the health endpoint is
-`http://localhost:8000/health`. Set `PORT` to override port 8000.
+The backward-compatible gateway endpoint is `http://localhost:8000/mcp` and
+the health endpoint is `http://localhost:8000/health`. Specialist endpoints
+are `http://localhost:8000/specialists/<domain-id>/mcp`. Set `PORT` to
+override port 8000.
 
 The `corp_code` arguments are OpenDART eight-digit company identifiers, not
 six-digit stock codes. For example, OpenDART's public guide uses `00126380` for
@@ -193,10 +197,11 @@ docker run --rm -p 8000:8000 \
 ```
 
 Configure the deployment secret as `DART_API_KEY`; never bake it into the image
-or commit it. Register `/mcp` as the Streamable HTTP endpoint. The server uses
-stateless HTTP so it does not require session affinity. Verify that PlayMCP
-discovers 92 tools after deployment: ten gateway tools and 82 `dart_*`
-specialist tools.
+or commit it. The server uses stateless HTTP so it does not require session
+affinity. In PlayMCP, register the 16 specialist URLs individually:
+`/specialists/<domain-id>/mcp`. Do not register all 82 tools through `/mcp`:
+PlayMCP's developer guide caps an MCP server at 20 tools. The optional `/mcp`
+gateway has 10 tools and can remain registered separately for compatibility.
 
 ## Development checks
 
