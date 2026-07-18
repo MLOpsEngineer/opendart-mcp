@@ -85,7 +85,7 @@ def test_health_endpoint() -> None:
     assert response.json() == {
         "status": "ok",
         "service": "opendart-mcp",
-        "version": "1.2.0",
+        "version": "1.2.1",
     }
 
 

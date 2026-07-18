@@ -54,7 +54,7 @@ mcp = FastMCP(
         "Use these read-only tools to retrieve concise Korean corporate disclosure data "
         f"from {SERVICE_DESCRIPTION}. Company identifiers are eight-digit OpenDART corp codes."
     ),
-    version="1.2.0",
+    version="1.2.1",
 )
 client = OpenDartClient()
 specialist_registry = SpecialistServerRegistry(client)
@@ -66,7 +66,7 @@ def annotations(title: str) -> ToolAnnotations:
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(_request: Request) -> JSONResponse:
-    return JSONResponse({"status": "ok", "service": "opendart-mcp", "version": "1.2.0"})
+    return JSONResponse({"status": "ok", "service": "opendart-mcp", "version": "1.2.1"})
 
 
 @mcp.tool(

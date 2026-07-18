@@ -174,6 +174,36 @@ async def test_registry_resolves_company_name_before_calling_tool() -> None:
 
 
 @pytest.mark.asyncio
+async def test_registry_can_proxy_a_specialist_tool_to_a_compatible_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeOpenDartClient()
+    registry = SpecialistServerRegistry(  # type: ignore[arg-type]
+        fake,
+        upstream_gateway_url="https://gateway.example/mcp",
+    )
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    async def call_upstream(
+        server_id: str, tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        calls.append((server_id, tool_name, arguments))
+        return {"status": "ok", "proxied": True}
+
+    monkeypatch.setattr(registry, "_call_upstream", call_upstream)
+
+    result = await registry.call_tool(
+        "disclosure_search",
+        "dart_company",
+        {"corp_code": "00126380"},
+    )
+
+    assert result == {"status": "ok", "proxied": True}
+    assert calls == [("disclosure_search", "dart_company", {"corp_code": "00126380"})]
+    assert fake.calls == []
+
+
+@pytest.mark.asyncio
 async def test_registry_rejects_unknown_server_and_tool() -> None:
     registry = SpecialistServerRegistry(FakeOpenDartClient())  # type: ignore[arg-type]
 

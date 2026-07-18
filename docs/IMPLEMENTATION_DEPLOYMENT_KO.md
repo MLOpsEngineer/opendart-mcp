@@ -14,7 +14,7 @@ flowchart LR
     R --> D["OpenDART API"]
 ```
 
-v1.2.0은 하나의 ASGI 컨테이너 안에 17개 Streamable HTTP endpoint를 만든다.
+v1.2.1은 하나의 ASGI 컨테이너 안에 17개 Streamable HTTP endpoint를 만든다.
 
 - `/mcp`: 기존 호환성용 gateway MCP, 10개 도구
 - `/specialists/<domain-id>/mcp`: PlayMCP에 개별 등록할 16개 전문 MCP
@@ -80,9 +80,15 @@ opendart-mcp
 `DART_API_KEY`는 OpenDART 호출에만 사용한다. 소스, Git, 이미지 레이어, PlayMCP
 설명에 넣지 않는다. Dockerfile은 기본 포트 `8000`에서 위 ASGI 앱을 실행한다.
 
+기존 심사 완료 gateway가 `DART_API_KEY`를 이미 보유할 때에는 새 edge 컨테이너에
+`OPENDART_UPSTREAM_GATEWAY_URL`만 설정할 수 있다. 이 옵션은 전문 tool 호출을
+gateway의 `call_disclosure_server_tool`로 전달하므로 API key를 복사하지 않는다.
+새 edge 자신의 URL을 upstream으로 지정하지 않으며, 장기적으로는 독립 host의
+`DART_API_KEY` secret으로 직접 OpenDART를 호출한다.
+
 ## 4. 검증 증거
 
-v1.2.0 로컬 검증 결과:
+v1.2.1 로컬 검증 결과:
 
 ```text
 pytest tests/test_server.py tests/test_specialists.py: 107 passed
@@ -108,12 +114,13 @@ uv run python -m compileall -q src tests
 `https://disclosure-compass.playmcp-endpoint.kakaocloud.io/mcp`, 콘솔 표시 도구 수는
 6개다. 같은 endpoint의 실제 `tools/list`은 gateway 10개를 반환한다. 콘솔 도구 수는
 자동 갱신되지 않을 수 있으므로, 실제 배포 판정은 원격 `tools/list`으로 한다. 어느
-관측값으로 보아도 v1.2.0의 16개 전문 endpoint와 82개 도구는 아직 반영되지 않았다.
+관측값으로 보아도 v1.2.1의 16개 전문 endpoint와 82개 도구는 아직 반영되지 않았다.
 
 PlayMCP 콘솔은 원격 MCP endpoint를 등록하고 도구 정보를 불러오는 화면이다. 따라서
 다음 두 작업 모두 완료되어야 한다.
 
-1. v1.2.0 Docker 이미지를 `DART_API_KEY`가 설정된 공개 HTTPS 호스트에 배포한다.
+1. v1.2.1 Docker 이미지를 공개 HTTPS 호스트에 배포한다. 독립 direct 모드는
+   `DART_API_KEY`, 전환 edge 모드는 기존 gateway URL만 필요하다.
 2. 16개 `/specialists/<domain-id>/mcp` URL을 PlayMCP에 임시 등록·검증한 뒤 심사
    요청한다.
 

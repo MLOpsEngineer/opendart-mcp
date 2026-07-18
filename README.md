@@ -203,6 +203,13 @@ affinity. In PlayMCP, register the 16 specialist URLs individually:
 PlayMCP's developer guide caps an MCP server at 20 tools. The optional `/mcp`
 gateway has 10 tools and can remain registered separately for compatibility.
 
+If an approved gateway already owns the OpenDART secret, a temporary public
+edge deployment may set `OPENDART_UPSTREAM_GATEWAY_URL` to that gateway's MCP
+URL instead of copying `DART_API_KEY`. Specialist calls then use its
+`call_disclosure_server_tool` contract. Do not point this variable back to the
+same edge endpoint; direct OpenDART mode with `DART_API_KEY` is the long-term
+deployment mode.
+
 ## Development checks
 
 ```bash

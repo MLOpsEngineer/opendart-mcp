@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Literal
@@ -36,6 +37,7 @@ ToolKind = Literal[
 
 SERVICE_DESCRIPTION = "Disclosure Compass(공시나침반) with OpenDART (전자공시시스템 DART)"
 SPECIALIST_MCP_PATH_PREFIX = "/specialists"
+UPSTREAM_GATEWAY_URL_ENV = "OPENDART_UPSTREAM_GATEWAY_URL"
 READ_ONLY_ANNOTATIONS = {
     "readOnlyHint": True,
     "destructiveHint": False,
@@ -571,8 +573,15 @@ def select_specialist_tool(server_id: str, query: str) -> SpecialistTool:
 class SpecialistServerRegistry:
     """Create and call the original domain tools through FastMCP in-memory clients."""
 
-    def __init__(self, dart_client: OpenDartClient) -> None:
+    def __init__(
+        self,
+        dart_client: OpenDartClient,
+        upstream_gateway_url: str | None = None,
+    ) -> None:
         self._dart_client = dart_client
+        self._upstream_gateway_url = (
+            upstream_gateway_url or os.getenv(UPSTREAM_GATEWAY_URL_ENV, "")
+        ).rstrip("/")
         self._servers = {
             server_id: self._build_server(server_id, tools)
             for server_id, tools in SPECIALIST_TOOLS.items()
@@ -586,7 +595,7 @@ class SpecialistServerRegistry:
                 f"{server_id} disclosure domain. Provide either an eight-digit OpenDART "
                 "company code or a Korean company name when a tool needs a company."
             ),
-            version="1.2.0",
+            version="1.2.1",
         )
         for spec in tools:
             self._register_tool(server, server_id, spec)
@@ -594,7 +603,7 @@ class SpecialistServerRegistry:
 
     def _register_tool(self, server: FastMCP, server_id: str, spec: SpecialistTool) -> None:
         async def invoke(arguments: dict[str, Any]) -> dict[str, Any]:
-            return await self._execute(server_id, spec, arguments)
+            return await self._invoke_specialist_tool(server_id, spec, arguments)
 
         server.tool(
             name=spec.name,
@@ -636,6 +645,29 @@ class SpecialistServerRegistry:
             return self._servers[server_id]
         except KeyError as exc:
             raise ValueError(f"unknown disclosure server: {server_id}") from exc
+
+    async def _invoke_specialist_tool(
+        self, server_id: str, spec: SpecialistTool, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self._upstream_gateway_url:
+            return await self._call_upstream(server_id, spec.name, arguments)
+        return await self._execute(server_id, spec, arguments)
+
+    async def _call_upstream(
+        self, server_id: str, tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Use a compatible gateway when this public edge has no DART secret."""
+
+        async with Client(self._upstream_gateway_url) as upstream:
+            result = await upstream.call_tool(
+                "call_disclosure_server_tool",
+                {
+                    "server_id": server_id,
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                },
+            )
+        return result.data
 
     async def _resolve_corp_code(self, arguments: dict[str, Any]) -> str:
         if arguments.get("corp_code"):
