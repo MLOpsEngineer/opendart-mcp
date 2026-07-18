@@ -329,3 +329,17 @@ OpenDART 바이너리·기업코드 처리, 관련 테스트와 공개 문서를
 PlayMCP in KC endpoint에서 `list_tools == 92`, 내부 인벤토리 `16/82`, 대표
 실제 OpenDART 호출을 통과한 뒤 본선 endpoint를 교체한다. 구체적인 배포 절차는
 [카카오 PlayMCP 운영·갱신 핸드북](KAKAO_PLAYMCP_OPERATIONS_KO.md)을 따른다.
+
+## 13. 2026-07-18 배포 시도 결과
+
+v1.1.0 commit `f9ab137`은 GitHub `main`에 push됐다. 로그인한 PlayMCP in KC
+콘솔에서 기존 서버 `disclosure-compass`(ID `3506`)의 원격 상태도 다시 확인했다.
+
+- 원격 endpoint의 실제 `tools/list`는 아직 10개이며 `dart_*` 직접 Tool은 0개다.
+- `list_disclosure_servers`는 기존처럼 16개 서버·82개 Tool을 반환한다.
+- My MCP의 `새 MCP 서버 등록` 버튼은 비활성화되어 있었고, 기존 상세 화면에는
+  `중지`, `삭제`, 모니터링만 있다. Git source 갱신·재빌드 UI는 없다.
+
+따라서 v1.1.0은 코드·GitHub 반영까지 완료됐지만 PlayMCP 배포는 카카오가 등록 또는
+재빌드 권한을 열어 주기 전까지 수행할 수 없다. 기존 endpoint를 중지·삭제하지 않고,
+권한이 열리면 새 Git source build 후 92개 공개 Tool을 원격 검증한다.
