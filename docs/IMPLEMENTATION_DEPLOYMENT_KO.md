@@ -116,13 +116,18 @@ uv run python -m compileall -q src tests
 자동 갱신되지 않을 수 있으므로, 실제 배포 판정은 원격 `tools/list`으로 한다. 어느
 관측값으로 보아도 v1.2.1의 16개 전문 endpoint와 82개 도구는 아직 반영되지 않았다.
 
-PlayMCP 콘솔은 원격 MCP endpoint를 등록하고 도구 정보를 불러오는 화면이다. 따라서
-다음 두 작업 모두 완료되어야 한다.
+PlayMCP 콘솔은 원격 MCP endpoint를 등록하고 도구 정보를 불러오는 화면이다. 현재
+v1.2.1은 Cloud Run `disclosure-compass-specialists` revision
+`disclosure-compass-specialists-00001-rnv`에 공개 배포됐다.
 
-1. v1.2.1 Docker 이미지를 공개 HTTPS 호스트에 배포한다. 독립 direct 모드는
-   `DART_API_KEY`, 전환 edge 모드는 기존 gateway URL만 필요하다.
-2. 16개 `/specialists/<domain-id>/mcp` URL을 PlayMCP에 임시 등록·검증한 뒤 심사
-   요청한다.
+```text
+https://disclosure-compass-specialists-91883774911.asia-northeast3.run.app
+```
+
+공개 host의 `/health`은 `v1.2.1`을, 16개 specialist URL의 `tools/list`은 정확히
+82개 도구를, `dart_company` 대표 호출은 `status=ok`를 반환했다. 이제 남은 배포
+단계는 16개 `/specialists/<domain-id>/mcp` URL을 PlayMCP에 임시 등록·검증한 뒤
+심사 요청하는 일이다.
 
 정확한 콘솔 입력값과 갱신 순서는
 [카카오 PlayMCP 운영·갱신 핸드북](KAKAO_PLAYMCP_OPERATIONS_KO.md)을 따른다.

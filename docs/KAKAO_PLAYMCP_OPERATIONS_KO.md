@@ -57,8 +57,9 @@ v1.2.1은 16개 공개 MCP endpoint로 분할한다. 기존 10개 gateway endpoi
 
 ## 3. 배포해야 하는 endpoint 목록
 
-공개 호스트 기준 URL은 `https://<PUBLIC_MCP_BASE_URL>`로 표기한다. 실제 배포 후
-16개 URL 모두가 공개 HTTPS여야 한다.
+현재 공개 호스트 기준 URL은
+`https://disclosure-compass-specialists-91883774911.asia-northeast3.run.app`이다.
+16개 URL 모두가 공개 HTTPS로 검증됐다.
 
 | domain ID | PlayMCP 식별자 제안 | 표시 이름 제안 | 도구 수 | 등록 endpoint |
 | --- | --- | --- | ---: | --- |
@@ -156,5 +157,8 @@ PY
 - v1.2.1: 16개 전문 FastMCP를 하나의 ASGI 컨테이너의 16개 Streamable HTTP URL로
   마운트하고, 기존 승인 gateway를 호출하는 선택적 secretless edge 모드를 지원한다.
   로컬 HTTP 검증은 gateway 10개, 전문 서버 16개, 전문 도구 82개를 확인했다.
-- 아직 이 v1.2.1 컨테이너를 공개 호스트에 올린 검증 URL은 없다. 따라서 지금 콘솔에
-  16개를 심사 요청하면 안 되며, 공개 호스팅 배포가 다음 필수 단계다.
+- Cloud Run `disclosure-compass-specialists` revision
+  `disclosure-compass-specialists-00001-rnv`가 공개 호스트에 배포됐다. health
+  `v1.2.1`, 전문 서버 16개, 전문 도구 82개, 대표 `dart_company` 실제 호출까지
+  2026-07-18 KST에 검증했다. 다음 필수 단계는 이 16개 URL을 PlayMCP에 임시 등록하고
+  정보 불러오기를 실행하는 일이다.
