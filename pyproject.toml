@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "opendart-mcp"
-version = "1.0.0"
+version = "1.1.0"
 description = "A small, public-ready MCP server for Korea's OpenDART disclosure data."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -37,4 +37,3 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-

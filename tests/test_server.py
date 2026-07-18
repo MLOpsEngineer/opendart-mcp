@@ -8,15 +8,15 @@ from starlette.testclient import TestClient
 
 import opendart_mcp.server as server_module
 from opendart_mcp.server import app, mcp
+from opendart_mcp.specialists import SPECIALIST_TOOLS, specialist_tool_count
 
 
 @pytest.mark.asyncio
-async def test_mcp_exposes_ten_curated_tools_with_complete_annotations() -> None:
+async def test_mcp_exposes_gateway_and_all_specialist_tools_with_complete_annotations() -> None:
     async with Client(mcp) as client:
         tools = await client.list_tools()
 
-    assert len(tools) == 10
-    assert {tool.name for tool in tools} == {
+    gateway_tool_names = {
         "get_company_profile",
         "search_disclosures",
         "get_financial_statement",
@@ -28,6 +28,12 @@ async def test_mcp_exposes_ten_curated_tools_with_complete_annotations() -> None
         "call_disclosure_server_tool",
         "route_and_call_disclosure",
     }
+    specialist_tool_names = {
+        spec.name for specs in SPECIALIST_TOOLS.values() for spec in specs
+    }
+    assert len(specialist_tool_names) == specialist_tool_count() == 82
+    assert len(tools) == len(gateway_tool_names) + specialist_tool_count() == 92
+    assert {tool.name for tool in tools} == gateway_tool_names | specialist_tool_names
     for tool in tools:
         assert re.fullmatch(r"[A-Za-z0-9_-]+", tool.name)
         assert "Disclosure Compass(공시나침반)" in (tool.description or "")
@@ -48,7 +54,7 @@ def test_health_endpoint() -> None:
     assert response.json() == {
         "status": "ok",
         "service": "opendart-mcp",
-        "version": "1.0.0",
+        "version": "1.1.0",
     }
 
 
@@ -95,3 +101,38 @@ async def test_route_and_call_executes_selected_specialist_tool(
             },
         )
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("server_id", "tool_name"),
+    [
+        (server_id, spec.name)
+        for server_id, specs in SPECIALIST_TOOLS.items()
+        for spec in specs
+    ],
+)
+async def test_each_public_specialist_tool_dispatches_to_its_registered_server(
+    monkeypatch: pytest.MonkeyPatch,
+    server_id: str,
+    tool_name: str,
+) -> None:
+    calls: list[tuple[str, str, dict[str, object]]] = []
+
+    class StubRegistry:
+        async def call_tool(
+            self, called_server_id: str, called_tool_name: str, arguments: dict[str, object]
+        ) -> dict[str, object]:
+            calls.append((called_server_id, called_tool_name, arguments))
+            return {"status": "ok", "server_id": called_server_id, "tool_name": called_tool_name}
+
+    monkeypatch.setattr(server_module, "specialist_registry", StubRegistry())
+
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            tool_name,
+            {"arguments": {"corp_code": "00126380", "max_items": 5}},
+        )
+
+    assert result.data == {"status": "ok", "server_id": server_id, "tool_name": tool_name}
+    assert calls == [(server_id, tool_name, {"corp_code": "00126380", "max_items": 5})]

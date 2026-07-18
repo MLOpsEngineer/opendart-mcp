@@ -49,7 +49,7 @@ mcp = FastMCP(
         "Use these read-only tools to retrieve concise Korean corporate disclosure data "
         f"from {SERVICE_DESCRIPTION}. Company identifiers are eight-digit OpenDART corp codes."
     ),
-    version="1.0.0",
+    version="1.1.0",
     stateless_http=True,
 )
 client = OpenDartClient()
@@ -60,9 +60,52 @@ def annotations(title: str) -> ToolAnnotations:
     return ToolAnnotations(title=title, **READ_ONLY)
 
 
+def _build_public_specialist_handler(server_id: str, tool_name: str):
+    """Bind a specialist identity once so every public MCP tool dispatches correctly."""
+
+    async def invoke(
+        arguments: Annotated[
+            dict[str, Any],
+            Field(
+                description=(
+                    "Arguments accepted by this OpenDART endpoint. Depending on the tool, use "
+                    "corp_code or corp_name, business_year, report_code, begin_date, end_date, "
+                    "receipt_number, corp_codes, fs_division, statement_type, index_code, and "
+                    "max_items."
+                )
+            ),
+        ],
+    ) -> dict[str, Any]:
+        return await specialist_registry.call_tool(server_id, tool_name, arguments)
+
+    return invoke
+
+
+def _register_public_specialist_tools() -> None:
+    """Expose every original specialist adapter in the top-level MCP tool catalog."""
+
+    registered_names: set[str] = set()
+    for server_id, specs in SPECIALIST_TOOLS.items():
+        for spec in specs:
+            if spec.name in registered_names:
+                raise RuntimeError(f"duplicate public specialist tool name: {spec.name}")
+            registered_names.add(spec.name)
+            mcp.tool(
+                name=spec.name,
+                title=f"{server_id}: {spec.label}",
+                description=(
+                    f"Use {SERVICE_DESCRIPTION} to retrieve {spec.label} through the "
+                    f"{server_id} disclosure domain. This read-only specialist tool calls "
+                    f"OpenDART endpoint {spec.endpoint}."
+                ),
+                annotations=annotations(f"{server_id}: {spec.label}"),
+                tags={"opendart", "specialist", server_id},
+            )(_build_public_specialist_handler(server_id, spec.name))
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(_request: Request) -> JSONResponse:
-    return JSONResponse({"status": "ok", "service": "opendart-mcp", "version": "1.0.0"})
+    return JSONResponse({"status": "ok", "service": "opendart-mcp", "version": "1.1.0"})
 
 
 @mcp.tool(
@@ -413,6 +456,9 @@ async def get_employee_statistics(
     payload = await _periodic_rows("empSttus.json", corp_code, business_year, report_code)
     items = employee_rows(payload, max_items)
     return result("empSttus.json", items, count=len(items))
+
+
+_register_public_specialist_tools()
 
 
 app = mcp.http_app(path="/mcp")

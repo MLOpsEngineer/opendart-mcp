@@ -2,15 +2,22 @@
 
 A focused Model Context Protocol server for public company disclosures from
 [OpenDART (전자공시시스템 DART)](https://opendart.fss.or.kr/). Disclosure
-Compass (공시나침반) exposes ten read-only gateway tools over Streamable HTTP.
-Behind that compact public surface are 16 in-process specialist MCP servers
-with 82 OpenDART tools, distilled from the original implementation without its
-LLM, vector-search, or A2A runtime dependencies.
+Compass (공시나침반) exposes **92 read-only tools** over Streamable HTTP:
+ten convenience gateway tools plus all 82 original OpenDART specialist tools.
+The specialist tools retain their 16 disclosure-domain identities while sharing
+one deployable MCP endpoint, without LLM, vector-search, or A2A runtime
+dependencies.
 
 This project is independent open-source software and is not an official
 OpenDART product.
 
+For the complete 16-domain/82-tool catalog and the Korean PlayMCP deployment
+runbook, see [구현·배포 운영 기록](docs/IMPLEMENTATION_DEPLOYMENT_KO.md) and
+[카카오 PlayMCP 운영·갱신 핸드북](docs/KAKAO_PLAYMCP_OPERATIONS_KO.md).
+
 ## Tools
+
+### Gateway tools (10)
 
 | Tool | Purpose |
 | --- | --- |
@@ -24,6 +31,29 @@ OpenDART product.
 | `list_disclosure_servers` | Inspect all 16 specialist servers and 82 tool names/endpoints |
 | `call_disclosure_server_tool` | Execute an exact named tool on an exact specialist server |
 | `route_and_call_disclosure` | Classify, select a specialist tool, and execute it in one call |
+
+### Specialist tools (82)
+
+Every original `dart_*` tool is also directly published in `tools/list`.
+The tools are grouped by the same 16 domain IDs as the classifier and preserve
+the original OpenDART endpoint names; the full per-domain catalog is in the
+[implementation record](docs/IMPLEMENTATION_DEPLOYMENT_KO.md#4-전문-서버-16개와-내부-tool-82개).
+
+Specialist tools take one `arguments` object. Its accepted fields depend on the
+endpoint and include `corp_code` or `corp_name`, `business_year`, `report_code`,
+`begin_date`, `end_date`, `corp_codes`, `receipt_number`, `fs_division`,
+`statement_type`, `index_code`, and `max_items`. For example:
+
+```json
+{
+  "arguments": {
+    "corp_code": "00126380",
+    "begin_date": "20250101",
+    "end_date": "20251231",
+    "max_items": 10
+  }
+}
+```
 
 All tools are declared read-only, non-destructive, idempotent, and open-world.
 Every specialist result is capped at 50 rows. Binary filing and XBRL tools
@@ -164,7 +194,9 @@ docker run --rm -p 8000:8000 \
 
 Configure the deployment secret as `DART_API_KEY`; never bake it into the image
 or commit it. Register `/mcp` as the Streamable HTTP endpoint. The server uses
-stateless HTTP so it does not require session affinity.
+stateless HTTP so it does not require session affinity. Verify that PlayMCP
+discovers 92 tools after deployment: ten gateway tools and 82 `dart_*`
+specialist tools.
 
 ## Development checks
 
