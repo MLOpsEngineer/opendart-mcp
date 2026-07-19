@@ -65,9 +65,19 @@ PlayMCP의 MCP당 최대 20개 도구 제한은 `tools/list`에 보이는 공개
 새 MCP의 설명은 “자연어 요청을 16개 공시 전문 서버와 82개 OpenDART 도구로 라우팅하는
 읽기 전용 MCP”이며, 대표 이미지와 대화 예시 3개도 저장돼 있다.
 
-기존 승인 카드의 Tools 6은 이전 gateway의 등록 메타데이터다. 새 단일 라우터 MCP의
-심사가 완료되면 기존 카드를 유지할지, 새 MCP로 대체할지 별도로 결정한다. 기존 카드를
-유지해도 새 라우터의 82개 내부 실행 범위에는 영향을 주지 않는다.
+기존 승인 카드의 Tools 6은 이전 gateway의 등록 메타데이터다. `dartSearch`는
+`dartcompass`와 다른 **별도 MCP 레코드**이므로, 임시 등록본이 승인되더라도 기존 카드를
+자동으로 교체하지 않는다.
+
+기존 승인 MCP에 라우터 배포본을 반영할 때의 공식 절차는 다음과 같다.
+
+1. 등록된 `dartcompass` 카드를 수정하고 endpoint를 공개 router `/mcp`로 바꾼다.
+2. `정보 불러오기`로 최신 공개 도구 메타데이터(10개)를 가져와 저장한다.
+3. 재심사를 요청하고 통과하면 상세 페이지의 최신 도구 정보가 반영된다.
+
+`dartSearch` 임시 등록본은 개발자 본인 AI 채팅 테스트와 별도 심사용으로 유지할 수
+있지만, 원래의 등록 MCP나 공모전 출품 레코드를 대체한다는 근거는 아니다. 공모전의
+출품 MCP 변경·교체 인정 여부는 별도 운영 안내가 있을 때만 그 안내를 우선한다.
 
 ## 4. 내부 16 서버와 82 도구 분할
 
@@ -101,8 +111,9 @@ PlayMCP의 MCP당 최대 20개 도구 제한은 `tools/list`에 보이는 공개
 1. `v1.2.2`를 Cloud Run `disclosure-compass-specialists`에 배포한다.
 2. `/mcp`의 10개 도구와 `route_and_call_disclosure` 실제 호출을 검증한다.
 3. PlayMCP `공시나침반 공시 검색` 카드의 endpoint는 반드시 `/mcp`다.
-4. endpoint나 도구 설명을 변경하면 카드 메뉴의 `수정 → 정보 불러오기 → 저장하기`를
-   수행한다. 심사 중 변경이 심사 재요청을 요구하는지 콘솔 상태를 확인한다.
+4. endpoint나 도구 설명을 변경하면 카드 메뉴의 `수정 → 정보 불러오기 → 저장하기 →
+   재심사 요청`을 수행한다. 재심사를 통과해야 PlayMCP 상세 페이지의 도구 정보가
+   최신 내용으로 반영된다. AI 채팅 호출은 호출 시점의 최신 도구 정보를 사용한다.
 5. `/specialists/<domain>/mcp` 경로 16개를 새 PlayMCP MCP로 등록하지 않는다.
 
 새 edge에는 OpenDART 키를 복제하지 않는다. 현재 edge는
@@ -147,5 +158,8 @@ PY
 - [PlayMCP 서버 개발가이드](https://app.notion.com/p/PlayMCP-2d89b97b4888808a9e1dc17a13e70187)
 - [서비스 도움말](https://app.notion.com/p/2189b97b4888803dbbdcef264e7eff58)
 - [MCP 도구 정보 갱신 도움말](https://app.notion.com/p/MCP-2389b97b488880b3896bceb076899938)
+- [등록 MCP와 임시 등록 MCP 차이](https://app.notion.com/p/MCP-MCP-2389b97b488880cdbaeddea5dc95c247)
+- [임시 등록 MCP의 AI 채팅 테스트](https://app.notion.com/p/MCP-AI-2389b97b488880b182b3f3805612f6c8)
+- [AGENTIC PLAYER 10 공식 안내](https://b.kakao.com/views/PlayMCP/AGENTIC_PlAYER_10)
 - [구현·배포 기록](IMPLEMENTATION_DEPLOYMENT_KO.md)
 - [README](../README.md)
