@@ -47,7 +47,100 @@ async def test_gateway_mcp_exposes_only_its_ten_orchestration_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sixteen_public_specialist_mcps_partition_all_eighty_two_tools() -> None:
+@pytest.mark.parametrize(
+    ("gateway_tool", "arguments", "expected_server", "expected_tool"),
+    [
+        ("get_company_profile", {"corp_code": "00126380"}, "disclosure_search", "dart_company"),
+        (
+            "search_disclosures",
+            {
+                "begin_date": "20250101",
+                "end_date": "20250131",
+                "corp_code": "00126380",
+                "max_items": 5,
+            },
+            "disclosure_search",
+            "dart_list",
+        ),
+        (
+            "get_financial_statement",
+            {
+                "corp_code": "00126380",
+                "business_year": "2024",
+                "report_code": "11011",
+                "fs_division": "CFS",
+                "statement_type": "IS",
+                "max_items": 5,
+            },
+            "financial_statement",
+            "dart_fnlttSinglAcntAll",
+        ),
+        (
+            "get_dividend_information",
+            {
+                "corp_code": "00126380",
+                "business_year": "2024",
+                "report_code": "11011",
+                "max_items": 5,
+            },
+            "shareholder_stock",
+            "dart_alotMatter",
+        ),
+        (
+            "get_major_shareholders",
+            {
+                "corp_code": "00126380",
+                "business_year": "2024",
+                "report_code": "11011",
+                "max_items": 5,
+            },
+            "shareholder_stock",
+            "dart_hyslrSttus",
+        ),
+        (
+            "get_employee_statistics",
+            {
+                "corp_code": "00126380",
+                "business_year": "2024",
+                "report_code": "11011",
+                "max_items": 5,
+            },
+            "executive_compensation",
+            "dart_empSttus",
+        ),
+    ],
+)
+async def test_gateway_helper_tools_route_through_specialist_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    gateway_tool: str,
+    arguments: dict[str, object],
+    expected_server: str,
+    expected_tool: str,
+) -> None:
+    calls: list[tuple[str, str, dict[str, object]]] = []
+
+    class StubRegistry:
+        async def call_tool(
+            self, server_id: str, tool_name: str, payload: dict[str, object]
+        ) -> dict[str, object]:
+            calls.append((server_id, tool_name, payload))
+            return {"status": "ok", "server_id": server_id, "tool_name": tool_name}
+
+    monkeypatch.setattr(server_module, "specialist_registry", StubRegistry())
+
+    async with Client(mcp) as client:
+        result = await client.call_tool(gateway_tool, arguments)
+
+    assert result.data == {
+        "status": "ok",
+        "server_id": expected_server,
+        "tool_name": expected_tool,
+    }
+    assert calls == [(expected_server, expected_tool, arguments)]
+
+
+@pytest.mark.asyncio
+async def test_sixteen_internal_specialist_servers_partition_all_eighty_two_tools() -> None:
     mounted_paths = {route.path for route in app.routes}
     discovered_tool_names: set[str] = set()
 
@@ -85,7 +178,7 @@ def test_health_endpoint() -> None:
     assert response.json() == {
         "status": "ok",
         "service": "opendart-mcp",
-        "version": "1.2.1",
+        "version": "1.2.2",
     }
 
 

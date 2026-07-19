@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "opendart-mcp"
-version = "1.2.1"
+version = "1.2.2"
 description = "A small, public-ready MCP server for Korea's OpenDART disclosure data."
 readme = "README.md"
 license = { file = "LICENSE" }

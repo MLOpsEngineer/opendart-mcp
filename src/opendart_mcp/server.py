@@ -16,21 +16,6 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount
 
 from .client import OpenDartClient
-from .normalization import (
-    company_profile,
-    disclosures,
-    dividend_rows,
-    employee_rows,
-    financial_accounts,
-    result,
-    shareholder_rows,
-    validate_business_year,
-    validate_corp_code,
-    validate_date_range,
-    validate_fs_division,
-    validate_report_code,
-    validate_statement_type,
-)
 from .routing import classify_disclosure_request as classify_request
 from .specialists import (
     SPECIALIST_TOOLS,
@@ -54,7 +39,7 @@ mcp = FastMCP(
         "Use these read-only tools to retrieve concise Korean corporate disclosure data "
         f"from {SERVICE_DESCRIPTION}. Company identifiers are eight-digit OpenDART corp codes."
     ),
-    version="1.2.1",
+    version="1.2.2",
 )
 client = OpenDartClient()
 specialist_registry = SpecialistServerRegistry(client)
@@ -66,7 +51,7 @@ def annotations(title: str) -> ToolAnnotations:
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(_request: Request) -> JSONResponse:
-    return JSONResponse({"status": "ok", "service": "opendart-mcp", "version": "1.2.1"})
+    return JSONResponse({"status": "ok", "service": "opendart-mcp", "version": "1.2.2"})
 
 
 @mcp.tool(
@@ -80,9 +65,9 @@ async def health_check(_request: Request) -> JSONResponse:
 async def get_company_profile(
     corp_code: Annotated[str, Field(description="Eight-digit OpenDART company code")],
 ) -> dict[str, Any]:
-    corp_code = validate_corp_code(corp_code)
-    payload = await client.get_json("company.json", {"corp_code": corp_code})
-    return result("company.json", company_profile(payload))
+    return await specialist_registry.call_tool(
+        "disclosure_search", "dart_company", {"corp_code": corp_code}
+    )
 
 
 @mcp.tool(
@@ -103,23 +88,16 @@ async def search_disclosures(
     ] = None,
     max_items: Annotated[int, Field(ge=1, le=20, description="Maximum result rows")] = 10,
 ) -> dict[str, Any]:
-    begin_date, end_date = validate_date_range(begin_date, end_date)
-    if corp_code is not None:
-        corp_code = validate_corp_code(corp_code)
-    payload = await client.get_json(
-        "list.json",
+    return await specialist_registry.call_tool(
+        "disclosure_search",
+        "dart_list",
         {
-            "bgn_de": begin_date,
-            "end_de": end_date,
+            "begin_date": begin_date,
+            "end_date": end_date,
             "corp_code": corp_code,
-            "page_no": 1,
-            "page_count": max_items,
-            "sort": "date",
-            "sort_mth": "desc",
+            "max_items": max_items,
         },
     )
-    items = disclosures(payload, max_items)
-    return result("list.json", items, count=len(items))
 
 
 @mcp.tool(
@@ -319,36 +297,16 @@ async def get_financial_statement(
     ] = None,
     max_items: Annotated[int, Field(ge=1, le=50, description="Maximum account rows")] = 30,
 ) -> dict[str, Any]:
-    corp_code = validate_corp_code(corp_code)
-    business_year = validate_business_year(business_year)
-    report_code = validate_report_code(report_code)
-    fs_division = validate_fs_division(fs_division)
-    statement_type = validate_statement_type(statement_type)
-    payload = await client.get_json(
-        "fnlttSinglAcntAll.json",
+    return await specialist_registry.call_tool(
+        "financial_statement",
+        "dart_fnlttSinglAcntAll",
         {
             "corp_code": corp_code,
-            "bsns_year": business_year,
-            "reprt_code": report_code,
-            "fs_div": fs_division,
-        },
-    )
-    items = financial_accounts(payload, max_items, statement_type)
-    return result("fnlttSinglAcntAll.json", items, count=len(items))
-
-
-async def _periodic_rows(
-    endpoint: str,
-    corp_code: str,
-    business_year: str,
-    report_code: str,
-) -> dict[str, Any]:
-    return await client.get_json(
-        endpoint,
-        {
-            "corp_code": validate_corp_code(corp_code),
-            "bsns_year": validate_business_year(business_year),
-            "reprt_code": validate_report_code(report_code),
+            "business_year": business_year,
+            "report_code": report_code,
+            "fs_division": fs_division,
+            "statement_type": statement_type,
+            "max_items": max_items,
         },
     )
 
@@ -370,9 +328,16 @@ async def get_dividend_information(
     ] = "11011",
     max_items: Annotated[int, Field(ge=1, le=50, description="Maximum result rows")] = 30,
 ) -> dict[str, Any]:
-    payload = await _periodic_rows("alotMatter.json", corp_code, business_year, report_code)
-    items = dividend_rows(payload, max_items)
-    return result("alotMatter.json", items, count=len(items))
+    return await specialist_registry.call_tool(
+        "shareholder_stock",
+        "dart_alotMatter",
+        {
+            "corp_code": corp_code,
+            "business_year": business_year,
+            "report_code": report_code,
+            "max_items": max_items,
+        },
+    )
 
 
 @mcp.tool(
@@ -392,9 +357,16 @@ async def get_major_shareholders(
     ] = "11011",
     max_items: Annotated[int, Field(ge=1, le=50, description="Maximum result rows")] = 30,
 ) -> dict[str, Any]:
-    payload = await _periodic_rows("hyslrSttus.json", corp_code, business_year, report_code)
-    items = shareholder_rows(payload, max_items)
-    return result("hyslrSttus.json", items, count=len(items))
+    return await specialist_registry.call_tool(
+        "shareholder_stock",
+        "dart_hyslrSttus",
+        {
+            "corp_code": corp_code,
+            "business_year": business_year,
+            "report_code": report_code,
+            "max_items": max_items,
+        },
+    )
 
 
 @mcp.tool(
@@ -414,9 +386,16 @@ async def get_employee_statistics(
     ] = "11011",
     max_items: Annotated[int, Field(ge=1, le=50, description="Maximum result rows")] = 30,
 ) -> dict[str, Any]:
-    payload = await _periodic_rows("empSttus.json", corp_code, business_year, report_code)
-    items = employee_rows(payload, max_items)
-    return result("empSttus.json", items, count=len(items))
+    return await specialist_registry.call_tool(
+        "executive_compensation",
+        "dart_empSttus",
+        {
+            "corp_code": corp_code,
+            "business_year": business_year,
+            "report_code": report_code,
+            "max_items": max_items,
+        },
+    )
 
 
 def create_app() -> Starlette:

@@ -1,164 +1,151 @@
-# 카카오 PlayMCP 등록·갱신 운영 핸드북
+# 카카오 PlayMCP 단일 라우터 운영 핸드북
 
-마지막 확인: **2026-07-18 KST**. 이 문서는 `Disclosure Compass(공시나침반)`의
-16개 전문 MCP 서버와 82개 OpenDART 도구를 PlayMCP에 등록·갱신하는 실행 기준이다.
-코드 배포(공개 URL을 운영하는 일)와 PlayMCP 등록(그 URL을 심사·노출하는 일)은
-서로 다른 단계다.
+마지막 확인: **2026-07-19 KST**. 이 문서는 `공시나침반 공시 검색` MCP 하나가
+16개 내부 전문 서버와 82개 OpenDART 기능을 라우팅하는 운영 기준이다. 코드 배포와
+PlayMCP 등록·심사는 별도 단계다.
 
-## 1. 확정된 PlayMCP 제약
+## 1. 확정 구조
+
+```mermaid
+flowchart LR
+    P["PlayMCP: 공시나침반 공시 검색"] --> G["/mcp: 10 visible tools"]
+    G --> R["라우터"]
+    R --> S["16 internal specialist servers"]
+    S --> T["82 dart_* OpenDART tools"]
+```
+
+PlayMCP에 등록하는 MCP는 **하나**다.
+
+| 구분 | 개수 | 역할 |
+| --- | ---: | --- |
+| 공개 PlayMCP MCP | 1 | `/mcp`, 콘솔에는 10개 gateway 도구가 보임 |
+| 내부 전문 서버 | 16 | 공시 도메인별 `SpecialistServerRegistry` 경계 |
+| 실제 OpenDART 도구 | 82 | `dart_*` 도구, 내부 전문 서버에 정확히 하나씩 속함 |
+
+PlayMCP의 MCP당 최대 20개 도구 제한은 `tools/list`에 보이는 공개 도구 수에 적용된다.
+따라서 82개를 직접 노출하면 안 된다. 대신 다음 두 라우터 도구가 전체 82개 실행을
+제공한다.
+
+- `route_and_call_disclosure`: 자연어 질문을 분류해 내부 서버와 도구를 선택·호출한다.
+- `call_disclosure_server_tool`: 알고 있는 `server_id`, `tool_name`으로 정확한 내부 도구를 호출한다.
+
+보조 도구 `classify_disclosure_request`, `list_disclosure_servers`는 선택 근거와 전체
+도구 카탈로그를 반환한다. `get_company_profile`, `search_disclosures`,
+`get_financial_statement`, `get_dividend_information`, `get_major_shareholders`,
+`get_employee_statistics`도 동일한 내부 registry를 통해 실행한다.
+
+## 2. PlayMCP 제약과 대응
 
 제공받은 [PlayMCP 서버 개발가이드](https://app.notion.com/p/PlayMCP-2d89b97b4888808a9e1dc17a13e70187)
-(2026-06-12 업데이트)를 기준으로 한다.
+(2026-06-12 업데이트) 기준이다.
 
-| 항목 | 요구 사항 | 이 저장소의 대응 |
+| 항목 | 요구 사항 | 대응 |
 | --- | --- | --- |
-| 전송 방식 | 외부에서 접근 가능한 Streamable HTTP MCP | HTTPS 공개 호스트의 `/specialists/<id>/mcp` |
-| 프로토콜 | MCP 2025-03-26 이상, 2025-11-25 이하 | FastMCP 2.14.5 Streamable HTTP |
-| 도구 수 | MCP 서버당 최대 20개, 권장 3-10개 | 16개 서버에 2-9개씩, 합계 82개 |
-| 도구 이름 | 1-128자, 영문·숫자·`_`·`-`, 중복 불가 | 기존 `dart_*` 이름 유지, 서버별 중복 없음 |
-| 도구 메타데이터 | name, description, inputSchema, annotations 필수 | 모든 도구에 입력 스키마와 4개 읽기 전용 annotation |
-| 설명 | 영문 권장, 서비스 정식 영문/한글명 포함 | `Disclosure Compass(공시나침반)`, `OpenDART (전자공시시스템 DART)` 포함 |
-| 응답 성능 | p99 3,000ms 이내 | OpenDART 호출 시간·실패율을 운영에서 측정해야 함 |
+| 전송 방식 | 공개 Streamable HTTP MCP | HTTPS `/mcp` |
+| 프로토콜 | MCP 2025-03-26 이상, 2025-11-25 이하 | FastMCP Streamable HTTP |
+| 공개 도구 수 | MCP 서버당 최대 20개 | gateway 10개 |
+| 내부 실행 범위 | 콘솔 도구 수와 별도 | 16 서버, 82 `dart_*` 기능을 router가 실행 |
+| 도구 메타데이터 | name, description, inputSchema, annotations | gateway와 내부 도구 모두 읽기 전용 annotation 선언 |
 
-따라서 82개를 하나의 `tools/list`에 넣는 v1.1.0 방식은 **도구 수 제한 위반**이다.
-v1.2.1은 16개 공개 MCP endpoint로 분할한다. 기존 10개 gateway endpoint는
-호환성을 위한 별도 MCP이며, 82개 전문 도구 등록 수에는 포함하지 않는다.
+콘솔의 `Tools 10`은 오류가 아니라 의도된 공개 API 수다. **82는 공개 도구 목록 수가
+아니라 라우터가 실행할 수 있는 내부 기능 수**다.
 
-## 2. 현재 실제 PlayMCP 콘솔 상태
+## 3. 현재 콘솔 상태
 
-실제 개발자 콘솔은 [playmcp.kakao.com/console](https://playmcp.kakao.com/console?tab=registered)이다.
-2026-07-18 로그인 상태에서 확인한 값은 다음과 같다.
+실제 콘솔은 [playmcp.kakao.com/console](https://playmcp.kakao.com/console?tab=registered)이다.
 
-| 콘솔 항목 | 관측값 |
+| 항목 | 상태 |
 | --- | --- |
-| 등록된 MCP | 1개 |
-| 임시 등록된 MCP | 0개 |
-| 기존 MCP | `Disclosure Compass(공시나침반)` |
-| 기존 MCP 식별자 | `dartcompass` |
-| 심사 상태 | 심사 완료 |
-| 연결 상태 | Online |
-| 콘솔 표시 도구 수 | 6개 |
-| 현재 endpoint | `https://disclosure-compass.playmcp-endpoint.kakaocloud.io/mcp` |
-| 신규 등록 | `새로운 MCP 서버 등록` 버튼 사용 가능 |
+| 기존 승인 MCP | `Disclosure Compass(공시나침반)` / `dartcompass` / Tools 6 |
+| 기존 endpoint | `https://disclosure-compass.playmcp-endpoint.kakaocloud.io/mcp` |
+| 새 심사 요청 MCP | `공시나침반 공시 검색` / `dartSearch` |
+| 새 endpoint | `https://disclosure-compass-specialists-91883774911.asia-northeast3.run.app/mcp` |
+| 새 MCP 상태 | Online, Tools 10, 심사 중 |
 
-같은 시각에 원격 endpoint를 MCP Client로 직접 조회하면 `tools/list`은 gateway 도구
-10개를 반환한다. 즉 콘솔 카드의 `Tools 6`은 최신 원격 목록과 일치하지 않으며,
-도움말의 “상세 도구 정보는 자동 갱신되지 않는다”는 설명과도 일치한다. 등록 수의
-판정은 콘솔 카드가 아니라 `정보 불러오기` 및 원격 `tools/list`로 한다.
+새 MCP의 설명은 “자연어 요청을 16개 공시 전문 서버와 82개 OpenDART 도구로 라우팅하는
+읽기 전용 MCP”이며, 대표 이미지와 대화 예시 3개도 저장돼 있다.
 
-신규 등록 화면은 팀프로필, 대표 이미지, MCP 이름, MCP 식별자(영문·숫자, 최대 16자),
-설명, 대화 예시, 인증 방식, MCP Endpoint를 입력한 뒤 **정보 불러오기**로 원격
-`tools/list`을 확인하고 `등록 및 심사 요청` 또는 `임시 등록`을 선택하는 흐름이다.
+기존 승인 카드의 Tools 6은 이전 gateway의 등록 메타데이터다. 새 단일 라우터 MCP의
+심사가 완료되면 기존 카드를 유지할지, 새 MCP로 대체할지 별도로 결정한다. 기존 카드를
+유지해도 새 라우터의 82개 내부 실행 범위에는 영향을 주지 않는다.
 
-기존 MCP를 바꿀 때는 [도구 정보 갱신 도움말](https://app.notion.com/p/MCP-2389b97b488880b3896bceb076899938)에
-따라 카드 메뉴의 `수정`을 열고 **정보 불러오기 → 저장하기 또는 등록 및 심사 요청**을
-수행한다. 상세 화면의 도구 정보는 자동 갱신되지 않지만, AI 채팅 호출은 최신 원격
-도구 정보를 사용한다.
+## 4. 내부 16 서버와 82 도구 분할
 
-## 3. 배포해야 하는 endpoint 목록
+내부 분할은 라우팅·검증용이며, 아래 경로를 PlayMCP에 개별 등록하지 않는다.
 
-현재 공개 호스트 기준 URL은
-`https://disclosure-compass-specialists-91883774911.asia-northeast3.run.app`이다.
-16개 URL 모두가 공개 HTTPS로 검증됐다.
+| domain ID | 도구 수 | 내부 진단 경로 |
+| --- | ---: | --- |
+| `disclosure_search` | 4 | `/specialists/disclosure_search/mcp` |
+| `shareholder_stock` | 8 | `/specialists/shareholder_stock/mcp` |
+| `executive_compensation` | 9 | `/specialists/executive_compensation/mcp` |
+| `debt_securities` | 6 | `/specialists/debt_securities/mcp` |
+| `audit_fund` | 5 | `/specialists/audit_fund/mcp` |
+| `financial_statement` | 7 | `/specialists/financial_statement/mcp` |
+| `equity_disclosure` | 2 | `/specialists/equity_disclosure/mcp` |
+| `securities_registration` | 6 | `/specialists/securities_registration/mcp` |
+| `capital_change` | 4 | `/specialists/capital_change/mcp` |
+| `treasury_stock` | 4 | `/specialists/treasury_stock/mcp` |
+| `convertible_securities` | 4 | `/specialists/convertible_securities/mcp` |
+| `merger_division` | 4 | `/specialists/merger_division/mcp` |
+| `business_transfer` | 5 | `/specialists/business_transfer/mcp` |
+| `overseas_listing` | 4 | `/specialists/overseas_listing/mcp` |
+| `equity_investment` | 3 | `/specialists/equity_investment/mcp` |
+| `corporate_issues` | 7 | `/specialists/corporate_issues/mcp` |
+| **합계** | **82** | **16 internal servers** |
 
-| domain ID | PlayMCP 식별자 제안 | 표시 이름 제안 | 도구 수 | 등록 endpoint |
-| --- | --- | --- | ---: | --- |
-| `disclosure_search` | `dartSearch` | 공시나침반 공시 검색 | 4 | `/specialists/disclosure_search/mcp` |
-| `shareholder_stock` | `dartHolder` | 공시나침반 주주·주식 | 8 | `/specialists/shareholder_stock/mcp` |
-| `executive_compensation` | `dartExec` | 공시나침반 임원·보수 | 9 | `/specialists/executive_compensation/mcp` |
-| `debt_securities` | `dartDebt` | 공시나침반 채무증권 | 6 | `/specialists/debt_securities/mcp` |
-| `audit_fund` | `dartAudit` | 공시나침반 감사·자금 | 5 | `/specialists/audit_fund/mcp` |
-| `financial_statement` | `dartFinance` | 공시나침반 재무정보 | 7 | `/specialists/financial_statement/mcp` |
-| `equity_disclosure` | `dartEquity` | 공시나침반 지분공시 | 2 | `/specialists/equity_disclosure/mcp` |
-| `securities_registration` | `dartReg` | 공시나침반 증권등록 | 6 | `/specialists/securities_registration/mcp` |
-| `capital_change` | `dartCapital` | 공시나침반 증자·감자 | 4 | `/specialists/capital_change/mcp` |
-| `treasury_stock` | `dartTreasury` | 공시나침반 자기주식 | 4 | `/specialists/treasury_stock/mcp` |
-| `convertible_securities` | `dartConvert` | 공시나침반 전환증권 | 4 | `/specialists/convertible_securities/mcp` |
-| `merger_division` | `dartMerger` | 공시나침반 합병·분할 | 4 | `/specialists/merger_division/mcp` |
-| `business_transfer` | `dartTransfer` | 공시나침반 영업·자산 양수도 | 5 | `/specialists/business_transfer/mcp` |
-| `overseas_listing` | `dartOverseas` | 공시나침반 해외상장 | 4 | `/specialists/overseas_listing/mcp` |
-| `equity_investment` | `dartInvestment` | 공시나침반 지분거래 | 3 | `/specialists/equity_investment/mcp` |
-| `corporate_issues` | `dartIssues` | 공시나침반 기업이슈 | 7 | `/specialists/corporate_issues/mcp` |
+정확한 도구명·OpenDART endpoint·한국어 라벨의 단일 원천은
+[`SPECIALIST_TOOLS`](../src/opendart_mcp/specialists.py)다.
 
-MCP 식별자는 PlayMCP가 도구명 앞에 붙이는 prefix이므로 서로 달라야 한다. 이름이나
-식별자에 `kakao`를 넣지 않는다. 각 등록에 `assets/disclosure-compass.png`를 대표
-이미지로 재사용할 수 있다.
+## 5. 배포와 갱신 절차
 
-## 4. 코드 배포 후 등록 절차
+1. `v1.2.2`를 Cloud Run `disclosure-compass-specialists`에 배포한다.
+2. `/mcp`의 10개 도구와 `route_and_call_disclosure` 실제 호출을 검증한다.
+3. PlayMCP `공시나침반 공시 검색` 카드의 endpoint는 반드시 `/mcp`다.
+4. endpoint나 도구 설명을 변경하면 카드 메뉴의 `수정 → 정보 불러오기 → 저장하기`를
+   수행한다. 심사 중 변경이 심사 재요청을 요구하는지 콘솔 상태를 확인한다.
+5. `/specialists/<domain>/mcp` 경로 16개를 새 PlayMCP MCP로 등록하지 않는다.
 
-1. v1.2.1을 공개 컨테이너 호스트에 배포한다. 장기 운영은 `DART_API_KEY`를 호스트의
-   런타임 secret으로만 주입한다. GitHub, 이미지, PlayMCP 설명에 쓰지 않는다.
-   기존 심사 완료 gateway가 이미 API key를 보유한 경우에는 새 edge에
-   `OPENDART_UPSTREAM_GATEWAY_URL=https://disclosure-compass.playmcp-endpoint.kakaocloud.io/mcp`
-   만 설정해 그 gateway의 `call_disclosure_server_tool`로 82개 호출을 위임할 수 있다.
-   이 방식은 key를 복사하지 않는 전환용이며, edge 자신을 upstream으로 지정하면 안 된다.
-2. 아래 검증을 통과한 **실제 URL**만 등록한다.
-3. 콘솔에서 `새로운 MCP 서버 등록`을 열고 위 표의 한 행을 입력한다.
-4. Endpoint에 `https://<host>/specialists/<domain-id>/mcp`를 입력하고
-   `정보 불러오기`를 누른다. 그 서버의 도구 수와 이름이 표·소스와 정확히 같아야 한다.
-5. 16개를 우선 `임시 등록`으로 연결 검증한 뒤, 이상 없으면 각각 `등록 및 심사 요청`한다.
-6. 기존 심사 완료 MCP는 수정 화면에서 endpoint를 v1.2.1 호스트의 `/mcp`로 유지하거나
-   교체한 뒤 정보 불러오기를 실행한다. 이 gateway는 10개 도구이므로 제한을 만족한다.
-7. 심사 완료 후 콘솔 카드의 각 도구 수 합계가 82개인지 확인하고, AI 채팅에서 대표
-   16개 도메인을 한 번씩 호출한다.
+새 edge에는 OpenDART 키를 복제하지 않는다. 현재 edge는
+`OPENDART_UPSTREAM_GATEWAY_URL=https://disclosure-compass.playmcp-endpoint.kakaocloud.io/mcp`
+로 기존 승인 gateway의 `call_disclosure_server_tool` 계약을 이용한다. 직접 운영으로
+전환할 때만 런타임 secret `DART_API_KEY`를 주입한다.
 
-콘솔은 원격 URL을 등록·검증하는 서비스다. 현재 작업공간의 Dockerfile을 공개 URL로
-실행하는 별도 호스트가 필요하다. 독립 direct 모드에는 `DART_API_KEY` secret이,
-전환 edge 모드에는 기존 승인 gateway URL이 필요하다.
-
-## 5. 배포 전·후 검증
+## 6. 배포 검증
 
 ```bash
-PUBLIC_MCP_BASE_URL='https://your-public-host.example'
+PUBLIC_MCP_BASE_URL='https://disclosure-compass-specialists-91883774911.asia-northeast3.run.app'
 
 .venv/bin/python - <<'PY'
 import asyncio
 import os
-
 from fastmcp import Client
-from opendart_mcp.specialists import SPECIALIST_TOOLS, specialist_mcp_path
 
-
-async def main() -> None:
-    base = os.environ["PUBLIC_MCP_BASE_URL"].rstrip("/")
-    total = 0
-    for server_id, specs in SPECIALIST_TOOLS.items():
-        async with Client(base + specialist_mcp_path(server_id)) as client:
-            tools = await client.list_tools()
-        names = {tool.name for tool in tools}
-        assert names == {spec.name for spec in specs}, server_id
-        assert 1 <= len(tools) <= 20, server_id
-        total += len(tools)
-    assert total == 82
-    print(f"verified specialist servers={len(SPECIALIST_TOOLS)}, tools={total}")
-
+async def main():
+    async with Client(os.environ['PUBLIC_MCP_BASE_URL'].rstrip('/') + '/mcp') as client:
+        tools = {tool.name for tool in await client.list_tools()}
+        assert len(tools) == 10
+        assert {'classify_disclosure_request', 'list_disclosure_servers',
+                'call_disclosure_server_tool', 'route_and_call_disclosure'} <= tools
+        result = await client.call_tool('route_and_call_disclosure', {
+            'query': '삼성전자 기업 개황을 알려줘',
+            'corp_code': '00126380',
+        })
+    assert result.data['selected_server'] == 'disclosure_search'
+    assert result.data['selected_tool'] == 'dart_company'
+    assert result.data['result']['status'] == 'ok'
+    print('public router verified: 10 visible tools, 16 internal servers, 82 capabilities')
 
 asyncio.run(main())
 PY
 ```
 
-추가로 `GET /health`가 200인지, 대표 endpoint가 실제 OpenDART 데이터를 `status=ok`로
-반환하는지, p99 호출 시간이 3초 이내인지 확인한다. 테스트에만 API 키를 넣지 말고
-배포 런타임의 secret을 사용한다.
+검증 시 `Tools 10`과 내부 실행 범위 `16/82`를 혼동하지 않는다. 심사 완료 뒤에는
+16개 도메인을 대표하는 자연어 질문을 각각 한 번씩 실행해 라우팅 회귀를 확인한다.
 
-## 6. 관련 문서
+## 7. 관련 문서
 
 - [PlayMCP 서버 개발가이드](https://app.notion.com/p/PlayMCP-2d89b97b4888808a9e1dc17a13e70187)
 - [서비스 도움말](https://app.notion.com/p/2189b97b4888803dbbdcef264e7eff58)
 - [MCP 도구 정보 갱신 도움말](https://app.notion.com/p/MCP-2389b97b488880b3896bceb076899938)
-- [MCP 전체 공개 도움말](https://app.notion.com/p/MCP-2189b97b488880d3b10acaa332e79c4e?pvs=25)
 - [구현·배포 기록](IMPLEMENTATION_DEPLOYMENT_KO.md)
 - [README](../README.md)
-
-## 7. 상태 기록
-
-- `f9ab137` / v1.1.0: 82개를 하나의 MCP endpoint에 직접 등록하려던 후보. PlayMCP
-  서버당 최대 20개 제한을 확인한 뒤 배포 대상으로 사용하지 않는다.
-- v1.2.1: 16개 전문 FastMCP를 하나의 ASGI 컨테이너의 16개 Streamable HTTP URL로
-  마운트하고, 기존 승인 gateway를 호출하는 선택적 secretless edge 모드를 지원한다.
-  로컬 HTTP 검증은 gateway 10개, 전문 서버 16개, 전문 도구 82개를 확인했다.
-- Cloud Run `disclosure-compass-specialists` revision
-  `disclosure-compass-specialists-00001-rnv`가 공개 호스트에 배포됐다. health
-  `v1.2.1`, 전문 서버 16개, 전문 도구 82개, 대표 `dart_company` 실제 호출까지
-  2026-07-18 KST에 검증했다. 다음 필수 단계는 이 16개 URL을 PlayMCP에 임시 등록하고
-  정보 불러오기를 실행하는 일이다.

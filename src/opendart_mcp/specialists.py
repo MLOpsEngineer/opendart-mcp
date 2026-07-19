@@ -595,7 +595,7 @@ class SpecialistServerRegistry:
                 f"{server_id} disclosure domain. Provide either an eight-digit OpenDART "
                 "company code or a Korean company name when a tool needs a company."
             ),
-            version="1.2.1",
+            version="1.2.2",
         )
         for spec in tools:
             self._register_tool(server, server_id, spec)

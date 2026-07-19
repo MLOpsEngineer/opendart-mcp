@@ -2,22 +2,23 @@
 
 A focused Model Context Protocol server for public company disclosures from
 [OpenDART (전자공시시스템 DART)](https://opendart.fss.or.kr/). Disclosure
-Compass (공시나침반) exposes 16 specialist Streamable HTTP MCP endpoints with
-**82 read-only OpenDART tools** in total. Each specialist endpoint has 2-9
-tools, meeting PlayMCP's per-server 20-tool limit. A separate 10-tool gateway
-endpoint remains available for backward-compatible request routing, without
-LLM, vector-search, or A2A runtime dependencies.
+Compass (공시나침반) exposes one public Streamable HTTP MCP gateway with
+**10 read-only tools**. Its routing tools select one of 16 internal specialist
+servers and execute any of their **82 read-only OpenDART tools**. This keeps the
+PlayMCP-visible `tools/list` below the 20-tool limit while preserving the full
+82-tool execution surface, without LLM, vector-search, or A2A runtime
+dependencies.
 
 This project is independent open-source software and is not an official
 OpenDART product.
 
-For the complete 16-domain/82-tool catalog and the Korean PlayMCP deployment
-runbook, see [구현·배포 운영 기록](docs/IMPLEMENTATION_DEPLOYMENT_KO.md) and
+For the complete 16-domain/82-tool catalog, router contract, and Korean
+PlayMCP deployment runbook, see [구현·배포 운영 기록](docs/IMPLEMENTATION_DEPLOYMENT_KO.md) and
 [카카오 PlayMCP 운영·갱신 핸드북](docs/KAKAO_PLAYMCP_OPERATIONS_KO.md).
 
 ## Tools
 
-### Gateway tools (10)
+### Public gateway tools (10)
 
 | Tool | Purpose |
 | --- | --- |
@@ -32,13 +33,14 @@ runbook, see [구현·배포 운영 기록](docs/IMPLEMENTATION_DEPLOYMENT_KO.md
 | `call_disclosure_server_tool` | Execute an exact named tool on an exact specialist server |
 | `route_and_call_disclosure` | Classify, select a specialist tool, and execute it in one call |
 
-### Specialist tools (82 across 16 MCP endpoints)
+### Internal specialist tools (82 across 16 specialist servers)
 
-Every original `dart_*` tool is directly published in exactly one specialist
-endpoint's `tools/list`. The endpoints use
-`/specialists/<domain-id>/mcp`, such as
-`/specialists/financial_statement/mcp`. The 16 domain IDs and full per-domain
-catalog are in the [implementation record](docs/IMPLEMENTATION_DEPLOYMENT_KO.md).
+Every original `dart_*` tool belongs to exactly one internal specialist server.
+The public `route_and_call_disclosure` tool classifies a Korean request,
+selects that server and tool, then executes it. Callers that know the exact
+target can use `call_disclosure_server_tool`. The 16 domain IDs and full
+per-domain catalog are in the
+[implementation record](docs/IMPLEMENTATION_DEPLOYMENT_KO.md).
 
 Specialist tools take one `arguments` object. Its accepted fields depend on the
 endpoint and include `corp_code` or `corp_name`, `business_year`, `report_code`,
@@ -80,9 +82,10 @@ contains:
 This classifier performs deterministic term matching and does not itself call
 OpenDART. Use `route_and_call_disclosure` to classify and execute in one request,
 or use `call_disclosure_server_tool` for deterministic server/tool selection.
-The 16 specialist servers are real FastMCP instances mounted in one deployable
-ASGI process. They are separate public MCP network endpoints even though they
-share one container and one OpenDART client implementation.
+The 16 specialist servers are real FastMCP instances in one deployable ASGI
+process. The public PlayMCP contract is the single `/mcp` gateway; specialist
+paths exist for diagnostics and compatibility but must not be registered as
+additional PlayMCP MCPs.
 
 The classifier recognizes exactly these 16 domains:
 
@@ -176,10 +179,10 @@ export DART_API_KEY='your-runtime-secret'
 opendart-mcp
 ```
 
-The backward-compatible gateway endpoint is `http://localhost:8000/mcp` and
-the health endpoint is `http://localhost:8000/health`. Specialist endpoints
-are `http://localhost:8000/specialists/<domain-id>/mcp`. Set `PORT` to
-override port 8000.
+The public gateway endpoint is `http://localhost:8000/mcp` and the health
+endpoint is `http://localhost:8000/health`. Specialist endpoints are available
+at `http://localhost:8000/specialists/<domain-id>/mcp` for diagnostics only.
+Set `PORT` to override port 8000.
 
 The `corp_code` arguments are OpenDART eight-digit company identifiers, not
 six-digit stock codes. For example, OpenDART's public guide uses `00126380` for
@@ -198,17 +201,17 @@ docker run --rm -p 8000:8000 \
 
 Configure the deployment secret as `DART_API_KEY`; never bake it into the image
 or commit it. The server uses stateless HTTP so it does not require session
-affinity. In PlayMCP, register the 16 specialist URLs individually:
-`/specialists/<domain-id>/mcp`. Do not register all 82 tools through `/mcp`:
-PlayMCP's developer guide caps an MCP server at 20 tools. The optional `/mcp`
-gateway has 10 tools and can remain registered separately for compatibility.
+affinity. In PlayMCP, register exactly one URL: `/mcp`. Its 10 visible tools
+are within the 20-tool limit; `route_and_call_disclosure` and
+`call_disclosure_server_tool` expose the 82 internal capabilities at execution
+time. Do not register `/specialists/<domain-id>/mcp` paths in PlayMCP.
 
 If an approved gateway already owns the OpenDART secret, a temporary public
 edge deployment may set `OPENDART_UPSTREAM_GATEWAY_URL` to that gateway's MCP
-URL instead of copying `DART_API_KEY`. Specialist calls then use its
-`call_disclosure_server_tool` contract. Do not point this variable back to the
-same edge endpoint; direct OpenDART mode with `DART_API_KEY` is the long-term
-deployment mode.
+URL instead of copying `DART_API_KEY`. All public gateway helpers and router
+calls then use its `call_disclosure_server_tool` contract. Do not point this
+variable back to the same edge endpoint; direct OpenDART mode with
+`DART_API_KEY` is the long-term deployment mode.
 
 ## Development checks
 
